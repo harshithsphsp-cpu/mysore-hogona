@@ -115,11 +115,11 @@ export default function DashboardPage() {
           });
 
           // Process Chart Data (calls per status type)
-          const interested = contactsData?.filter(c => c.status === "Interested").length || 0;
-          const notInterested = contactsData?.filter(c => c.status === "Not Interested").length || 0;
-          const busy = contactsData?.filter(c => c.status === "Busy").length || 0;
-          const callback = contactsData?.filter(c => c.status === "Callback Scheduled").length || 0;
-          const notCalled = contactsData?.filter(c => c.status === "Not Called").length || 0;
+          const interested = contactsData?.filter((c: any) => c.status === "Interested").length || 0;
+          const notInterested = contactsData?.filter((c: any) => c.status === "Not Interested").length || 0;
+          const busy = contactsData?.filter((c: any) => c.status === "Busy").length || 0;
+          const callback = contactsData?.filter((c: any) => c.status === "Callback Scheduled").length || 0;
+          const notCalled = contactsData?.filter((c: any) => c.status === "Not Called").length || 0;
 
           setChartData([
             { name: "Not Called", count: notCalled },
