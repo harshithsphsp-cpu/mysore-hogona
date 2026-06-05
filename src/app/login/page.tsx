@@ -21,7 +21,7 @@ export default function LoginPage() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     // 1. Password validation (must be name in all CAPITAL letters)
     const expectedPassword = selectedName.toUpperCase();
     if (password !== expectedPassword) {
@@ -32,8 +32,8 @@ export default function LoginPage() {
     setIsLoading(true);
     const email = `${selectedName.toLowerCase()}@mysorehogona.com`;
 
-    const isDummySupabase = 
-      !process.env.NEXT_PUBLIC_SUPABASE_URL || 
+    const isDummySupabase =
+      !process.env.NEXT_PUBLIC_SUPABASE_URL ||
       process.env.NEXT_PUBLIC_SUPABASE_URL.includes("dummy") ||
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY === "dummy_anon_key";
 
@@ -67,12 +67,12 @@ export default function LoginPage() {
 
       if (signInError) {
         // 3. If user doesn't exist yet, automatically register them
-        if (signInError.message.toLowerCase().includes("invalid login credentials") || 
-            signInError.message.toLowerCase().includes("user not found") ||
-            signInError.message.toLowerCase().includes("email not confirmed")) {
-          
+        if (signInError.message.toLowerCase().includes("invalid login credentials") ||
+          signInError.message.toLowerCase().includes("user not found") ||
+          signInError.message.toLowerCase().includes("email not confirmed")) {
+
           toast.info(`Initializing account for ${selectedName}...`);
-          
+
           const { error: signUpError } = await supabase.auth.signUp({
             email,
             password,
