@@ -19,12 +19,58 @@ export default function AnalyticsPage() {
   const [statusData, setStatusData] = useState<any[]>([]);
   const [trendData, setTrendData] = useState<any[]>([]);
 
+  const loadLocalAnalytics = () => {
+    setLoading(true);
+    const localContacts = JSON.parse(localStorage.getItem("contacts") || "[]");
+    const localFollowUps = JSON.parse(localStorage.getItem("followUps") || "[]");
+
+    const total = localContacts.length;
+    const completed = localContacts.filter((c: any) => c.status !== "Not Called").length;
+    const interested = localContacts.filter((c: any) => c.status === "Interested").length;
+    const registered = localContacts.filter((c: any) => c.status === "Registered for Event" || c.status === "Interested").length;
+    const followupsCount = localFollowUps.length;
+
+    setStats({
+      totalContacts: total,
+      callsCompleted: completed,
+      interestedLeads: interested,
+      registrations: registered,
+      followUps: followupsCount
+    });
+
+    const notCalled = localContacts.filter((c: any) => c.status === "Not Called").length;
+    const busy = localContacts.filter((c: any) => c.status === "Busy").length;
+    const callback = localContacts.filter((c: any) => c.status === "Callback Scheduled").length;
+    const notInterested = localContacts.filter((c: any) => c.status === "Not Interested").length;
+
+    setStatusData([
+      { name: "Interested", value: interested, color: "hsl(var(--chart-1))" },
+      { name: "Not Interested", value: notInterested, color: "hsl(var(--chart-2))" },
+      { name: "Follow-up / Callback", value: callback, color: "hsl(var(--chart-3))" },
+      { name: "Not Called / Busy", value: notCalled + busy, color: "hsl(var(--chart-4))" },
+    ]);
+
+    setTrendData([
+      { name: "Mon", calls: Math.round(completed * 0.15), interested: Math.round(interested * 0.15) },
+      { name: "Tue", calls: Math.round(completed * 0.2), interested: Math.round(interested * 0.2) },
+      { name: "Wed", calls: Math.round(completed * 0.25), interested: Math.round(interested * 0.1) },
+      { name: "Thu", calls: Math.round(completed * 0.1), interested: Math.round(interested * 0.25) },
+      { name: "Fri", calls: Math.round(completed * 0.3), interested: Math.round(interested * 0.3) },
+    ]);
+    setLoading(false);
+  };
+
   useEffect(() => {
     async function loadAnalytics() {
       setLoading(true);
       try {
         const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
+        const isMock = !user || !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes("dummy");
+        
+        if (isMock) {
+          loadLocalAnalytics();
+          return;
+        }
 
         const { data: members } = await supabase
           .from("organization_members")
@@ -49,9 +95,9 @@ export default function AnalyticsPage() {
             .eq("organization_id", orgId);
 
           const total = contacts?.length || 0;
-          const completed = contacts?.filter(c => c.status !== "Not Called").length || 0;
-          const interested = contacts?.filter(c => c.status === "Interested").length || 0;
-          const registered = contacts?.filter(c => c.status === "Registered for Event" || c.status === "Interested").length || 0;
+          const completed = contacts?.filter((c: any) => c.status !== "Not Called").length || 0;
+          const interested = contacts?.filter((c: any) => c.status === "Interested").length || 0;
+          const registered = contacts?.filter((c: any) => c.status === "Registered for Event" || c.status === "Interested").length || 0;
 
           setStats({
             totalContacts: total,
@@ -62,10 +108,10 @@ export default function AnalyticsPage() {
           });
 
           // Outcomes Breakdown
-          const notCalled = contacts?.filter(c => c.status === "Not Called").length || 0;
-          const busy = contacts?.filter(c => c.status === "Busy").length || 0;
-          const callback = contacts?.filter(c => c.status === "Callback Scheduled").length || 0;
-          const notInterested = contacts?.filter(c => c.status === "Not Interested").length || 0;
+          const notCalled = contacts?.filter((c: any) => c.status === "Not Called").length || 0;
+          const busy = contacts?.filter((c: any) => c.status === "Busy").length || 0;
+          const callback = contacts?.filter((c: any) => c.status === "Callback Scheduled").length || 0;
+          const notInterested = contacts?.filter((c: any) => c.status === "Not Interested").length || 0;
 
           setStatusData([
             { name: "Interested", value: interested, color: "hsl(var(--chart-1))" },
@@ -85,12 +131,13 @@ export default function AnalyticsPage() {
         }
       } catch (err) {
         console.error(err);
+        loadLocalAnalytics();
       } finally {
         setLoading(false);
       }
     }
     loadAnalytics();
-  }, [supabase]);
+  }, []);
 
   return (
     <div className="space-y-6">
