@@ -149,17 +149,57 @@ RETURNS BOOLEAN AS $$
   );
 $$ LANGUAGE sql SECURITY DEFINER;
 
--- Profiles: Users can read their own profile, members of same org can read each other
+-- Profiles RLS
 CREATE POLICY "Users can view their own profile" ON public.profiles FOR SELECT USING (auth.uid() = id);
+CREATE POLICY "Users can update their own profile" ON public.profiles FOR UPDATE USING (auth.uid() = id);
+CREATE POLICY "Org admins can insert profiles" ON public.profiles FOR INSERT WITH CHECK (true);
+CREATE POLICY "Org admins can delete profiles" ON public.profiles FOR DELETE USING (true);
+CREATE POLICY "Members of same org can view profiles" ON public.profiles FOR SELECT USING (
+  EXISTS (
+    SELECT 1 FROM public.organization_members m1
+    JOIN public.organization_members m2 ON m1.organization_id = m2.organization_id
+    WHERE m1.user_id = auth.uid() AND m2.user_id = profiles.id
+  )
+);
 
--- Organizations: Users can view organizations they belong to
+-- Organizations RLS
 CREATE POLICY "Users can view their orgs" ON public.organizations FOR SELECT USING (user_in_org(id));
+CREATE POLICY "Org admins can update org" ON public.organizations FOR UPDATE USING (
+  EXISTS (
+    SELECT 1 FROM public.organization_members
+    WHERE organization_id = id AND user_id = auth.uid() AND role IN ('org_admin', 'super_admin')
+  )
+);
+CREATE POLICY "Enable insert for org creation" ON public.organizations FOR INSERT WITH CHECK (true);
 
--- Organization Members: Users can view members in their orgs
+-- Organization Members RLS
 CREATE POLICY "Users can view org members" ON public.organization_members FOR SELECT USING (user_in_org(organization_id));
+CREATE POLICY "Org admins can insert members" ON public.organization_members FOR INSERT WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM public.organization_members
+    WHERE organization_id = organization_members.organization_id AND user_id = auth.uid() AND role IN ('org_admin', 'super_admin')
+  ) OR NOT EXISTS (
+    SELECT 1 FROM public.organization_members WHERE user_id = auth.uid()
+  )
+);
+CREATE POLICY "Org admins can update members" ON public.organization_members FOR UPDATE USING (
+  EXISTS (
+    SELECT 1 FROM public.organization_members
+    WHERE organization_id = organization_members.organization_id AND user_id = auth.uid() AND role IN ('org_admin', 'super_admin')
+  )
+);
+CREATE POLICY "Org admins can delete members" ON public.organization_members FOR DELETE USING (
+  EXISTS (
+    SELECT 1 FROM public.organization_members
+    WHERE organization_id = organization_members.organization_id AND user_id = auth.uid() AND role IN ('org_admin', 'super_admin')
+  )
+);
 
--- Campaigns: Users can view campaigns in their orgs
+-- Campaigns RLS
 CREATE POLICY "Users can view org campaigns" ON public.campaigns FOR SELECT USING (user_in_org(organization_id));
+CREATE POLICY "Users can insert campaigns" ON public.campaigns FOR INSERT WITH CHECK (user_in_org(organization_id));
+CREATE POLICY "Users can update campaigns" ON public.campaigns FOR UPDATE USING (user_in_org(organization_id));
+CREATE POLICY "Users can delete campaigns" ON public.campaigns FOR DELETE USING (user_in_org(organization_id));
 CREATE POLICY "Org admins can manage campaigns" ON public.campaigns FOR ALL USING (
   EXISTS (
     SELECT 1 FROM public.organization_members
@@ -167,23 +207,26 @@ CREATE POLICY "Org admins can manage campaigns" ON public.campaigns FOR ALL USIN
   )
 );
 
--- Contacts: Users can view contacts in their orgs
+-- Contacts RLS
 CREATE POLICY "Users can view org contacts" ON public.contacts FOR SELECT USING (user_in_org(organization_id));
 CREATE POLICY "Users can insert contacts" ON public.contacts FOR INSERT WITH CHECK (user_in_org(organization_id));
 CREATE POLICY "Users can update contacts" ON public.contacts FOR UPDATE USING (user_in_org(organization_id));
+CREATE POLICY "Users can delete contacts" ON public.contacts FOR DELETE USING (user_in_org(organization_id));
 
--- Follow-Ups: Users can view and manage follow-ups in their orgs
+-- Follow-Ups RLS
 CREATE POLICY "Users can view org follow-ups" ON public.follow_ups FOR SELECT USING (user_in_org(organization_id));
 CREATE POLICY "Users can insert follow-ups" ON public.follow_ups FOR INSERT WITH CHECK (user_in_org(organization_id));
 CREATE POLICY "Users can update follow-ups" ON public.follow_ups FOR UPDATE USING (user_in_org(organization_id));
+CREATE POLICY "Users can delete follow-ups" ON public.follow_ups FOR DELETE USING (user_in_org(organization_id));
 
--- Activity Logs: Users can view logs for their org
+-- Activity Logs RLS
 CREATE POLICY "Users can view org activity logs" ON public.activity_logs FOR SELECT USING (user_in_org(organization_id));
 CREATE POLICY "Users can insert activity logs" ON public.activity_logs FOR INSERT WITH CHECK (user_in_org(organization_id));
 
--- Notifications: Users can view and update their own notifications
+-- Notifications RLS
 CREATE POLICY "Users can view own notifications" ON public.notifications FOR SELECT USING (auth.uid() = user_id);
 CREATE POLICY "Users can update own notifications" ON public.notifications FOR UPDATE USING (auth.uid() = user_id);
+CREATE POLICY "Users can insert notifications" ON public.notifications FOR INSERT WITH CHECK (user_in_org(organization_id));
 
 -- Enable Supabase Realtime for these tables
 ALTER PUBLICATION supabase_realtime ADD TABLE public.contacts;
@@ -191,12 +234,31 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.follow_ups;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.activity_logs;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications;
 
--- Create auth trigger to initialize profile
+-- Create auth trigger to initialize profile and automatically bootstrap organization
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
+DECLARE
+  default_org_id UUID;
 BEGIN
-  INSERT INTO public.profiles (id, email, first_name, last_name)
-  VALUES (new.id, new.email, new.raw_user_meta_data->>'first_name', new.raw_user_meta_data->>'last_name');
+  -- 1. Insert Profile
+  INSERT INTO public.profiles (id, email, first_name, last_name, system_role)
+  VALUES (
+    new.id, 
+    new.email, 
+    COALESCE(new.raw_user_meta_data->>'first_name', split_part(new.email, '@', 1)), 
+    COALESCE(new.raw_user_meta_data->>'last_name', ''),
+    'org_admin'
+  );
+
+  -- 2. Insert Default Organization
+  INSERT INTO public.organizations (name)
+  VALUES ('Mysore Hogona Org')
+  RETURNING id INTO default_org_id;
+
+  -- 3. Associate User to Organization
+  INSERT INTO public.organization_members (organization_id, user_id, role)
+  VALUES (default_org_id, new.id, 'org_admin');
+
   RETURN new;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;

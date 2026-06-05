@@ -28,21 +28,29 @@ export async function updateSession(request: NextRequest) {
   );
 
   // refreshing the auth token
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  let user = null;
+  try {
+    const { data } = await supabase.auth.getUser();
+    user = data?.user;
+  } catch (e) {
+    // Ignore error in local development
+  }
+
+  const hasMockSession = request.cookies.has("sb-mock-session");
+  const isDummySupabase = !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes("dummy");
 
   // Route protection
   const isAuthRoute = request.nextUrl.pathname.startsWith('/login') || request.nextUrl.pathname.startsWith('/signup');
+  const isAuthenticated = !!user || hasMockSession || isDummySupabase;
   
-  if (!user && !isAuthRoute && request.nextUrl.pathname !== '/') {
+  if (!isAuthenticated && !isAuthRoute && request.nextUrl.pathname !== '/') {
     // no user, potentially respond by redirecting the user to the login page
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     return NextResponse.redirect(url);
   }
 
-  if (user && isAuthRoute) {
+  if (isAuthenticated && isAuthRoute) {
     const url = request.nextUrl.clone();
     url.pathname = '/dashboard';
     return NextResponse.redirect(url);

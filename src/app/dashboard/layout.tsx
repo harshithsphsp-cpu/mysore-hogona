@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
@@ -18,6 +18,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -37,11 +38,54 @@ export default function DashboardLayout({
   const router = useRouter();
   const supabase = createClient();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [profile, setProfile] = useState<any>(null);
+  const [org, setOrg] = useState<any>(null);
+  useEffect(() => {
+    async function loadUserAndOrg() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        // Load profile
+        const { data: profileData } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", user.id)
+          .maybeSingle();
+        if (profileData) {
+          setProfile(profileData);
+        }
+
+        // Load organization member record and join organizations
+        const { data: members } = await supabase
+          .from("organization_members")
+          .select("organization_id, organizations(*)")
+          .eq("user_id", user.id);
+        
+        if (members && members.length > 0) {
+          setOrg(members[0].organizations);
+        }
+      } else if (typeof window !== "undefined") {
+        const stored = localStorage.getItem("mock_user");
+        if (stored) {
+          const mockUser = JSON.parse(stored);
+          setProfile(mockUser);
+          setOrg({ name: "Mysore Hogona Org" });
+        }
+      }
+    }
+    loadUserAndOrg();
+  }, []);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.error("SignOut failed:", e);
+    }
+    document.cookie = "sb-mock-session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
+    localStorage.removeItem("mock_user");
     toast.success("Logged out successfully");
     router.push("/login");
+    router.refresh();
   };
 
   const NavLinks = () => (
@@ -81,6 +125,23 @@ export default function DashboardLayout({
           <Bell className="mr-3 h-5 w-5 text-muted-foreground group-hover:text-foreground" />
           Notifications
         </Link>
+
+        {profile && (
+          <div className="flex items-center gap-3 px-2 py-3 border-b mb-1">
+            <Avatar className="h-9 w-9">
+              <AvatarImage src={`https://avatar.vercel.sh/${profile.first_name}`} />
+              <AvatarFallback>{(profile.first_name?.substring(0, 2) || "U").toUpperCase()}</AvatarFallback>
+            </Avatar>
+            <div className="overflow-hidden">
+              <div className="font-semibold text-sm truncate text-foreground">
+                {profile.first_name} {profile.last_name || ""}
+              </div>
+              <div className="text-xs text-muted-foreground truncate">
+                {org ? org.name : "Personal Org"}
+              </div>
+            </div>
+          </div>
+        )}
 
         <button
           onClick={handleLogout}
